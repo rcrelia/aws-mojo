@@ -1,0 +1,75 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description:
+  "CloudFormation template for creating a CodeCommit repository along with a
+  SNS topic for repo activity trigger notifications"
+
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment type (can be used for tagging)
+    AllowedValues:
+    - Dev
+    - Prod
+    Default: Dev
+  RepoName:
+    Type: String
+    Description: A unique name for the CodeCommit repository
+    MaxLength: 100
+  RepoDescription:
+    Type: String
+    Description: A description of the CodeCommit repository
+    MaxLength: 1000
+  Email:
+    Type: String
+    Description: Email address for SNS notifications on repo events
+    AllowedPattern: '([a-zA-Z0-9_\\-\\.]+)@([a-zA-Z0-9_\\-\\.]+)'
+    ConstraintDescription: Must be a valid email address format
+
+Resources:
+  RepoSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: CodeCommit repo topic for master branch trigger events
+      Subscription:
+        - Endpoint:
+            Ref: Email
+          Protocol: email
+  Repository:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName:
+        Ref: RepoName
+      RepositoryDescription: CodeCommit Repository
+      Triggers:
+      - Name: MasterTrigger
+        CustomData: ProjectID 12345
+        DestinationArn:
+          Ref: RepoSNSTopic # a SNS Topic resource Ref returns the topic ARN
+        Branches:
+        - master
+        Events:
+        - all
+
+Outputs:
+    CloneUrlSsh:
+      Description: SSH URL to use for cloning
+      Value:
+        Fn::GetAtt:
+          - Repository
+          - CloneUrlSsh
+    CodeCommitURL:
+      Description: URL for the CodeCommit console
+      Value:
+        Fn::Join:
+          - ''
+          - - "https://console.aws.amazon.com/codecommit/home?region="
+            - Ref: AWS::Region
+            - "#/repository/"
+            - Ref: RepoName
+            - "/browse/HEAD/--/"
+    SNSTopic:
+      Description: SNS topic for master branch trigger events
+      Value:
+        Ref: RepoSNSTopic
