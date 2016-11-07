@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "Create a CodeCommit repo",
+  "Description": "CloudFormation template for creating a CodeCommit repository along with a SNS topic for repo activity trigger notifications",
   "Parameters": {
     "Environment": {
       "Type": "String",
@@ -61,7 +61,7 @@
       "Value": { "Fn::GetAtt": [ "Repository", "CloneUrlSsh" ] }
     },
     "CodeCommitURL": {
-      "Description": "CodeCommit Repository URL",
+      "Description": "URL for the CodeCommit console",
       "Value": {
         "Fn::Join": [
           "",
