@@ -1,0 +1,123 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Create S3 VPC endpoint for NAT/NAT Gateway multiAZ public/private VPC",
+  "Parameters": {
+    "VPC": {
+      "Type": "String",
+      "Description": "Object ID of VPC"
+    },
+    "PrivateRouteTableAZ1": {
+      "Type": "String",
+      "Description": "Route table for private subnet in AZ1"
+    },
+    "PrivateRouteTableAZ2": {
+      "Type": "String",
+      "Description": "Route table for private subnet in AZ2"
+    },
+    "PublicRouteTable": {
+      "Type": "String",
+      "Description": "Route table for public subnets"
+    },
+    "S3Bucket": {
+      "Type": "String",
+      "Description": "S3Bucket containing CloudFormation templates, also used for S3 VPC Endpoint policy"
+    }
+  },
+  "Resources": {
+    "S3Endpoint": {
+      "Type": "AWS::EC2::VPCEndpoint",
+      "Properties": {
+        "ServiceName": { "Fn::Join": [ "", [ "com.amazonaws.", { "Ref": "AWS::Region" }, ".s3" ] ] },
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "PolicyDocument": {
+          "Version":"2012-10-17",
+          "Statement": [
+            {
+              "Sid": "List buckets via endpoint",
+              "Effect": "Allow",
+              "Principal": "*",
+              "Action": [
+                "s3:GetBucketLocation",
+                "s3:ListAllMyBuckets"
+              ],
+              "Resource": [ "arn:aws:s3:::*" ]
+            },
+            {
+              "Sid": "Allow specific bucket access via endpoint",
+              "Effect": "Allow",
+              "Principal": "*",
+              "Action": [ "s3:ListBucket" ],
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "S3Bucket"
+                      }
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Sid": "Allow specific bucket access via endpoint",
+              "Effect": "Allow",
+              "Principal": "*",
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject"
+              ],
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:s3:::",
+                      {
+                        "Ref": "S3Bucket"
+                      },
+                      "/*"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Sid": "AmazonLinuxRepoistoryAccess",
+              "Effect":"Allow",
+              "Principal": "*",
+              "Action": [
+                "s3:GetObject"
+              ],
+              "Resource": [
+                "arn:aws:s3:::packages.*.amazonaws.com/*",
+                "arn:aws:s3:::repo.*.amazonaws.com/*"
+              ]
+            }
+          ]
+        },
+        "RouteTableIds": [
+          {
+            "Ref": "PrivateRouteTableAZ1"
+          },
+          {
+            "Ref": "PrivateRouteTableAZ2"
+          },
+          {
+            "Ref": "PublicRouteTable"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "S3Endpoint": {
+      "Description": "S3 VPC endpoint",
+      "Value": { "Ref": "S3Endpoint" }
+    }
+  }
+}

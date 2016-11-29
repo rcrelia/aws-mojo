@@ -1,0 +1,1354 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Create a VPC with public/private subnets in two AZs using HA-NAT instances in each public zone for private instance outbound Internet connectivity. Also, a S3 VPC Endpoint is created and configured so as to provide a more secure S3 connection (internal to the VPC) as well as reduce NAT traffic.",
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": { "default": "VPC Configuration" },
+          "Parameters": [
+            "Environment",
+            "ConfigS3Endpoint",
+            "S3Bucket",
+            "TemplatePath",
+            "VpcCIDR",
+            "AvZone1",
+            "AvZone2",
+            "PublicSubnetAZ1",
+            "PublicSubnetAZ2",
+            "PrivateSubnetAZ1",
+            "PrivateSubnetAZ2"
+          ]
+        },
+        {
+          "Label": { "default": "NAT Instance Configuration" },
+          "Parameters": [
+            "NatKeyPair",
+            "NatInstanceType",
+            "RemoteCIDR",
+            "NumberOfPings",
+            "PingTimeout",
+            "WaitBetweenPings",
+            "WaitForInstanceStop",
+            "WaitForInstanceStart"
+          ]
+        }
+      ],
+      "ParameterLabels": {
+        "Environment": { "default": "Which environment will use this VPC? (used in various tags and resource names)" },
+        "VpcCIDR": { "default": "What is the CIDR block for this VPC?" }
+      }
+    }
+  },
+  "Parameters": {
+    "Environment": {
+      "Type": "String",
+      "Description": "Used for miscellaneous object names and tags",
+      "AllowedValues": [ "dev", "staging", "prod" ],
+      "Default": "dev"
+    },
+    "ConfigS3Endpoint": {
+      "Type": "String",
+      "Description": "Select yes to create a VPC endpoint to privatize access to S3 resources",
+      "AllowedValues": [ "no", "yes" ],
+      "Default": "no"
+    },
+    "VpcCIDR": {
+        "Type": "String",
+        "Description": "IP Address range for the VPC",
+        "MinLength": "9",
+        "MaxLength": "18",
+        "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+        "ConstraintDescription": "Valid IP CIDR range as x.x.x.x/x.",
+        "Default": "10.0.0.0/16"
+    },
+    "PublicSubnetAZ1": {
+      "Type": "String",
+      "Description": "IP Address range for AZ1 public subnet",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Valid IP CIDR block range - x.x.x.x/x.",
+      "Default": "10.0.0.0/24"
+    },
+    "PublicSubnetAZ2": {
+      "Type": "String",
+      "Description": "IP Address range for AZ2 public subnet",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Valid IP CIDR block range - x.x.x.x/x.",
+      "Default": "10.0.2.0/24"
+    },
+    "PrivateSubnetAZ1": {
+      "Type": "String",
+      "Description": "IP Address range for AZ1 private subnet",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Valid IP CIDR block range - x.x.x.x/x.",
+      "Default": "10.0.1.0/24"
+    },
+    "PrivateSubnetAZ2": {
+      "Type": "String",
+      "Description": "IP Address range for AZ2 private subnet",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "Valid IP CIDR block range - x.x.x.x/x.",
+      "Default": "10.0.3.0/24"
+    },
+    "AvZone1": {
+      "Type": "String",
+      "Description": "First AZ to use for subnets, etc.",
+      "ConstraintDescription": "Must be a valid AZ - # aws ec2 describe-availability-zones",
+      "Default": "us-east-1a"
+    },
+    "AvZone2": {
+      "Type": "String",
+      "Description": "Second AZ to use for subnets, etc.",
+      "ConstraintDescription": "Must be a valid AZ - # aws ec2 describe-availability-zones",
+      "Default": "us-east-1c"
+    },
+    "NatKeyPair": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "Existing EC2 key pair for NAT instance"
+    },
+    "NatInstanceType": {
+      "Type": "String",
+      "Description": "EC2 instance type for NAT",
+      "AllowedValues": [ "t2.micro","m4.large","m4.xlarge" ],
+      "Default": "t2.micro"
+    },
+    "RemoteCIDR": {
+      "Type": "String",
+      "Description": "CIDR IP range allowed to login to the NAT instance, ideally your VPN/ISP netblock",
+      "MinLength": "9",
+      "MaxLength": "18",
+      "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+      "ConstraintDescription": "must be a valid CIDR range of the form x.x.x.x/x."
+    },
+    "NumberOfPings": {
+      "Type": "String",
+      "Description": "The number of times the health check will ping the alternate NAT Node",
+      "Default": "3"
+    },
+    "PingTimeout": {
+      "Type": "String",
+      "Description": "The number of seconds to wait for each ping response before determining that the ping has failed",
+      "Default": "2"
+    },
+    "WaitBetweenPings": {
+      "Type": "String",
+      "Description": "The number of seconds to wait between health checks",
+      "Default": "5"
+    },
+    "WaitForInstanceStop": {
+      "Type": "String",
+      "Description": "The number of seconds to wait for alternate NAT Node to stop before attempting to stop it again",
+      "Default": "60"
+    },
+    "WaitForInstanceStart": {
+      "Type": "String",
+      "Description": "The number of seconds to wait for alternate NAT Node to restart before resuming health checks again",
+      "Default": "300"
+    },
+    "S3Bucket": {
+      "Type": "String",
+      "Description": "S3Bucket containing CloudFormation templates, also used for S3 VPC Endpoint policy",
+      "Default": "myS3bucket"
+    },
+    "TemplatePath": {
+      "Type": "String",
+      "Description": "Path to CloudFormation templates (relative to top level of S3Bucket parameter)",
+      "Default": "/cloudformation_templates/"
+    }
+  },
+  "Mappings": {
+    "NATRegionAMI": {
+      "us-east-1": {
+        "AMI": "ami-4868ab25"
+      },
+      "us-east-2": {
+        "AMI": "ami-92a6fef7"
+      },
+      "us-west-1": {
+        "AMI": "ami-004b0f60"
+      },
+      "us-west-2": {
+        "AMI": "ami-a275b1c2"
+      }
+    },
+    "PrefixListId": {
+      "us-east-1": {
+        "s3": "pl-63a5400a"
+      },
+      "us-east-2": {
+        "s3": "pl-7ba54012"
+      },
+      "us-west-1": {
+        "s3": "pl-6ba54002"
+      },
+      "us-west-2": {
+        "s3": "pl-68a54001"
+      },
+      "eu-west-1": {
+        "s3": "pl-6da54004"
+      },
+      "eu-central-1": {
+        "s3": "pl-6ea54007"
+      },
+      "ap-northeast-1": {
+        "s3": "pl-61a54008"
+      },
+      "ap-northeast-2": {
+        "s3": "pl-78a54011"
+      },
+      "ap-southeast-1": {
+        "s3": "pl-6fa54006"
+      },
+      "ap-southeast-2": {
+        "s3": "pl-6ca54005"
+      },
+      "ap-south-1": {
+        "s3": "pl-78a54011"
+      },
+      "sa-east-1": {
+        "s3": "pl-6aa54003"
+      }
+    }
+  },
+  "Conditions": {
+    "ConfigureS3Endpoint": {
+      "Fn::Equals": [
+        {
+          "Ref": "ConfigS3Endpoint"
+        },
+        "yes"
+      ]
+    }
+  },
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "EnableDnsSupport": "True",
+        "EnableDnsHostnames": "True",
+        "CidrBlock": {
+          "Ref": "VpcCIDR"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "vpc_",
+                  {
+                    "Ref": "Environment"
+                  }
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          }
+        ]
+      }
+    },
+    "InetGw": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "igw_",
+                  {
+                    "Ref": "Environment"
+                  }
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          }
+        ]
+      }
+    },
+    "IgwAttachment": {
+      "DependsOn": [ "InetGw" ],
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "InternetGatewayId": {
+          "Ref": "InetGw"
+        }
+      }
+    },
+    "PubSubnetAZ1": {
+      "DependsOn": [ "VPC" ],
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "AvailabilityZone": {
+          "Ref": "AvZone1"
+        },
+        "CidrBlock": {
+          "Ref": "PublicSubnetAZ1"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "subnet_",
+                  {
+                    "Ref": "Environment"
+                  },
+                  "_public_az1"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          }
+        ]
+      }
+    },
+    "PubSubnetAZ2": {
+      "DependsOn": [ "VPC" ],
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "AvailabilityZone": {
+          "Ref": "AvZone2"
+        },
+        "CidrBlock": {
+          "Ref": "PublicSubnetAZ2"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "subnet_",
+                  {
+                    "Ref": "Environment"
+                  },
+                  "_public_az2"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          }
+        ]
+      }
+    },
+    "PublicRoute": {
+      "DependsOn": [ "PublicRouteTable", "VPC" ],
+      "Type": "AWS::EC2::Route",
+      "DependsOn": [ "InetGw","PublicRouteTable" ],
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {
+          "Ref": "InetGw"
+        }
+      }
+    },
+    "PublicRouteTable": {
+      "DependsOn": [ "VPC" ],
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "rtb_",
+                  {
+                    "Ref": "Environment"
+                  },
+                  "_public"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "SubnetType",
+            "Value": "public"
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          }
+        ]
+      }
+    },
+    "PubRouteTableAssocAZ1": {
+      "DependsOn": [ "PubSubnetAZ1", "PublicRouteTable" ],
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PubSubnetAZ1"
+        },
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        }
+      }
+    },
+    "PubRouteTableAssocAZ2": {
+      "DependsOn": [ "PubSubnetAZ2", "PublicRouteTable" ],
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PubSubnetAZ2"
+        },
+        "RouteTableId": {
+          "Ref": "PublicRouteTable"
+        }
+      }
+    },
+    "PrivSubnetAZ1": {
+      "DependsOn": [ "VPC" ],
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "AvailabilityZone": {
+          "Ref": "AvZone1"
+        },
+        "CidrBlock": {
+          "Ref": "PrivateSubnetAZ1"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "subnet_",
+                  {
+                    "Ref": "Environment"
+                  },
+                  "_private_az1"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          }
+        ]
+      }
+    },
+    "PrivSubnetAZ2": {
+      "DependsOn": [ "VPC" ],
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "AvailabilityZone": {
+          "Ref": "AvZone2"
+        },
+        "CidrBlock": {
+          "Ref": "PrivateSubnetAZ2"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "subnet_",
+                  {
+                    "Ref": "Environment"
+                  },
+                  "_private_az2"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          }
+        ]
+      }
+    },
+    "PrivateRouteAZ1": {
+      "DependsOn": [ "PrivateRouteTableAZ1", "NatInstanceAZ1" ],
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PrivateRouteTableAZ1"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "NatInstanceAZ1"
+        }
+      }
+    },
+    "PrivateRouteAZ2": {
+      "DependsOn": [ "PrivateRouteTableAZ2", "NatInstanceAZ2" ],
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": {
+          "Ref": "PrivateRouteTableAZ2"
+        },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "InstanceId": {
+          "Ref": "NatInstanceAZ2"
+        }
+      }
+    },
+    "PrivateRouteTableAZ1": {
+      "DependsOn": [ "VPC" ],
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "rtb_",
+                  {
+                    "Ref": "Environment"
+                  },
+                  "_private_az1"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "SubnetType",
+            "Value": "private"
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          }
+        ]
+      }
+    },
+    "PrivateRouteTableAZ2": {
+      "DependsOn": [ "VPC" ],
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "rtb_",
+                  {
+                    "Ref": "Environment"
+                  },
+                  "_private_az2"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "SubnetType",
+            "Value": "private"
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          }
+        ]
+      }
+    },
+    "PrivRouteTableAssocAZ1": {
+      "DependsOn": [ "PrivSubnetAZ1", "PrivateRouteTableAZ1" ],
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PrivSubnetAZ1"
+        },
+        "RouteTableId": {
+          "Ref": "PrivateRouteTableAZ1"
+        }
+      }
+    },
+    "PrivRouteTableAssocAZ2": {
+      "DependsOn": [ "PrivSubnetAZ2", "PrivateRouteTableAZ2" ],
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {
+          "Ref": "PrivSubnetAZ2"
+        },
+        "RouteTableId": {
+          "Ref": "PrivateRouteTableAZ2"
+        }
+      }
+    },
+    "NetworkAclStack": {
+      "DependsOn": [ "PrivSubnetAZ1", "PrivSubnetAZ2", "PubSubnetAZ1", "PubSubnetAZ2" ],
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Join": [
+            "",
+            [
+              "https://s3.amazonaws.com/",
+              {
+                "Ref": "S3Bucket"
+              },
+              {
+                "Ref": "TemplatePath"
+              },
+              "aws-vpc-network-acls.json"
+            ]
+          ]
+        },
+        "Parameters": {
+          "AvZone1": { "Ref": "AvZone1" },
+          "AvZone2": { "Ref": "AvZone2" },
+          "Environment": { "Ref": "Environment" },
+          "PrivSubnetAZ1": { "Ref": "PrivSubnetAZ1" },
+          "PrivSubnetAZ2": { "Ref": "PrivSubnetAZ2" },
+          "PrivateSubnetAZ1": { "Ref": "PrivateSubnetAZ1" },
+          "PrivateSubnetAZ2": { "Ref": "PrivateSubnetAZ2" },
+          "PubSubnetAZ1": { "Ref": "PubSubnetAZ1" },
+          "PubSubnetAZ2": { "Ref": "PubSubnetAZ2" },
+          "RemoteCIDR": { "Ref": "RemoteCIDR" },
+          "VPC": { "Ref": "VPC" },
+          "VpcCIDR": { "Ref": "VpcCIDR" }
+        },
+        "TimeoutInMinutes": "15"
+      }
+    },
+    "S3EndpointStack": {
+      "DependsOn": [ "PrivateRouteTableAZ1", "PrivateRouteTableAZ2", "PublicRouteTable" ],
+      "Condition" : "ConfigureS3Endpoint",
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Join": [
+            "",
+            [
+              "https://s3.amazonaws.com/",
+              {
+                "Ref": "S3Bucket"
+              },
+              {
+                "Ref": "TemplatePath"
+              },
+              "aws-vpc-s3endpoint.json"
+            ]
+          ]
+        },
+        "Parameters": {
+          "PrivateRouteTableAZ1": { "Ref": "PrivateRouteTableAZ1" },
+          "PrivateRouteTableAZ2": { "Ref": "PrivateRouteTableAZ2" },
+          "PublicRouteTable": { "Ref": "PublicRouteTable" },
+          "S3Bucket": { "Ref": "S3Bucket" },
+          "VPC": { "Ref": "VPC" }
+        },
+        "TimeoutInMinutes": "15"
+      }
+    },
+    "InstanceSecurityGroupStack": {
+      "DependsOn": [ "PrivSubnetAZ1", "PrivSubnetAZ2", "PubSubnetAZ1", "PubSubnetAZ2" ],
+      "Type": "AWS::CloudFormation::Stack",
+      "Properties": {
+        "TemplateURL": {
+          "Fn::Join": [
+            "",
+            [
+              "https://s3.amazonaws.com/",
+              {
+                "Ref": "S3Bucket"
+              },
+              {
+                "Ref": "TemplatePath"
+              },
+              "aws-vpc-instance-securitygroups.json"
+            ]
+          ]
+        },
+        "Parameters": {
+          "Environment": { "Ref": "Environment" },
+          "RemoteCIDR": { "Ref": "RemoteCIDR" },
+          "VpcCIDR": { "Ref": "VpcCIDR" },
+          "VPC": { "Ref": "VPC" }
+        },
+        "TimeoutInMinutes": "15"
+      }
+    },
+    "NatEipAZ1": {
+      "DependsOn": [ "IgwAttachment" ],
+      "Type": "AWS::EC2::EIP",
+      "Properties": {
+        "Domain": "vpc",
+        "InstanceId": {
+          "Ref": "NatInstanceAZ1"
+        }
+      }
+    },
+    "NatEipAZ2": {
+      "DependsOn": [ "IgwAttachment" ],
+      "Type": "AWS::EC2::EIP",
+      "Properties": {
+        "Domain": "vpc",
+        "InstanceId": {
+          "Ref": "NatInstanceAZ2"
+        }
+      }
+    },
+    "NatInstanceAZ1": {
+      "DependsOn": [ "NatRole", "PubSubnetAZ1", "NatSecurityGroup" ],
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "Comment1": "Create NAT in AZ1"
+      },
+      "Properties": {
+        "InstanceType": {
+          "Ref": "NatInstanceType"
+        },
+        "KeyName": {
+          "Ref": "NatKeyPair"
+        },
+	      "IamInstanceProfile": {
+          "Ref": "NatRoleProfile"
+        },
+        "SourceDestCheck": "false",
+        "ImageId": {
+          "Fn::FindInMap": [
+            "NATRegionAMI", {
+              "Ref": "AWS::Region"
+            },
+            "AMI"
+          ]
+        },
+        "NetworkInterfaces": [
+          {
+            "GroupSet": [
+              {
+                "Ref": "NatSecurityGroup"
+              }
+            ],
+            "AssociatePublicIpAddress": "true",
+            "DeviceIndex": "0",
+            "DeleteOnTermination": "true",
+            "SubnetId": {
+              "Ref": "PubSubnetAZ1"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "NAT AZ1"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash -v\n",
+	              "yum update -y aws*\n",
+	              ". /etc/profile.d/aws-apitools-common.sh\n",
+                "# Associate EIP to ENI on instance launch\n",
+                "INSTANCE_ID=`curl http://169.254.169.254/latest/meta-data/instance-id`\n",
+                "EIPALLOC_ID=$(aws ec2 describe-addresses --region ",
+                {
+                    "Ref": "AWS::Region"
+                },
+                " --filters Name=instance-id,Values=${INSTANCE_ID} --output text | cut -f2)\n",
+                "aws ec2 associate-address --region ",
+                {
+                    "Ref": "AWS::Region"
+                },
+                " --instance-id $INSTANCE_ID --allocation-id $EIPALLOC_ID\n",
+                "# Configure iptables\n",
+	              "/sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE\n",
+	              "/sbin/iptables-save > /etc/sysconfig/iptables\n",
+                "# Configure ip forwarding and redirects\n",
+                "echo 1 >  /proc/sys/net/ipv4/ip_forward && echo 0 >  /proc/sys/net/ipv4/conf/eth0/send_redirects\n",
+	              "mkdir -p /etc/sysctl.d/\n",
+	              "cat <<EOF > /etc/sysctl.d/nat.conf\n",
+	              "net.ipv4.ip_forward = 1\n",
+	              "net.ipv4.conf.eth0.send_redirects = 0\n",
+	              "EOF\n",
+                "# Download nat_monitor.sh and configure\n",
+                "cd /root\n",
+	              "wget http://media.amazonwebservices.com/articles/nat_monitor_files/nat_monitor.sh\n",
+	              "NAT_ID=\n",
+	              "# CloudFormation should have updated the PrivateRouteTable2 by now (due to yum update), however loop to make sure\n",
+	              "while [ \"$NAT_ID\" == \"\" ]; do\n",
+	              "  sleep 60\n",
+	              "  NAT_ID=`/opt/aws/bin/ec2-describe-route-tables ",
+                {
+                  "Ref": "PrivateRouteTableAZ2"
+                },
+                " -U https://ec2.",
+                {
+                  "Ref": "AWS::Region"
+                },
+                ".amazonaws.com | grep 0.0.0.0/0 | awk '{print $2;}'`\n",
+	              "  #echo `date` \"-- NAT_ID=$NAT_ID\" >> /tmp/test.log\n",
+	              "done\n",
+	              "# Update NAT_ID, NAT_RT_ID, and My_RT_ID\n",
+                "sed \"s/NAT_ID=/NAT_ID=$NAT_ID/g\" /root/nat_monitor.sh > /root/nat_monitor.tmp\n",
+                "sed \"s/NAT_RT_ID=/NAT_RT_ID=",
+                {
+                  "Ref": "PrivateRouteTableAZ2"
+                },
+                "/g\" /root/nat_monitor.tmp > /root/nat_monitor.sh\n",
+                "sed \"s/My_RT_ID=/My_RT_ID=",
+                {
+                  "Ref": "PrivateRouteTableAZ1"
+                },
+                "/g\" /root/nat_monitor.sh > /root/nat_monitor.tmp\n",
+                "sed \"s/EC2_URL=/EC2_URL=https:\\/\\/ec2.",
+                {
+                  "Ref": "AWS::Region"
+                },
+                ".amazonaws.com",
+                "/g\" /root/nat_monitor.tmp > /root/nat_monitor.sh\n",
+                "sed \"s/Num_Pings=3/Num_Pings=",
+                {
+                  "Ref": "NumberOfPings"
+                },
+                "/g\" /root/nat_monitor.sh > /root/nat_monitor.tmp\n",
+                "sed \"s/Ping_Timeout=1/Ping_Timeout=",
+                {
+                  "Ref": "PingTimeout"
+                },
+                "/g\" /root/nat_monitor.tmp > /root/nat_monitor.sh\n",
+                "sed \"s/Wait_Between_Pings=2/Wait_Between_Pings=",
+                {
+                  "Ref": "WaitBetweenPings"
+                },
+                "/g\" /root/nat_monitor.sh > /root/nat_monitor.tmp\n",
+                "sed \"s/Wait_for_Instance_Stop=60/Wait_for_Instance_Stop=",
+                {
+                  "Ref": "WaitForInstanceStop"
+                },
+                "/g\" /root/nat_monitor.tmp > /root/nat_monitor.sh\n",
+                "sed \"s/Wait_for_Instance_Start=300/Wait_for_Instance_Start=",
+                {
+                  "Ref": "WaitForInstanceStart"
+                },
+                "/g\" /root/nat_monitor.sh > /root/nat_monitor.tmp\n",
+                "mv /root/nat_monitor.tmp /root/nat_monitor.sh\n",
+                "chmod a+x /root/nat_monitor.sh\n",
+                "echo '@reboot /root/nat_monitor.sh > /tmp/nat_monitor.log' | crontab\n",
+                "/root/nat_monitor.sh > /tmp/nat_monitor.log &\n"
+                ]
+              ]
+            }
+          }
+        }
+    },
+    "NatInstanceAZ2": {
+      "DependsOn": [ "NatRole", "PubSubnetAZ2", "NatSecurityGroup" ],
+      "Type": "AWS::EC2::Instance",
+      "Metadata": {
+        "Comment1": "Create NAT in AZ2"
+      },
+      "Properties": {
+        "InstanceType": {
+          "Ref": "NatInstanceType"
+        },
+        "KeyName": {
+          "Ref": "NatKeyPair"
+        },
+	      "IamInstanceProfile": {
+          "Ref": "NatRoleProfile"
+        },
+        "SourceDestCheck": "false",
+        "ImageId": {
+          "Fn::FindInMap": [
+            "NATRegionAMI",
+            {
+              "Ref": "AWS::Region"
+            },
+            "AMI"
+          ]
+        },
+        "NetworkInterfaces": [
+          {
+            "GroupSet": [
+              {
+                "Ref": "NatSecurityGroup"
+              }
+            ],
+            "AssociatePublicIpAddress": "true",
+            "DeviceIndex": "0",
+            "DeleteOnTermination": "true",
+            "SubnetId": {
+              "Ref": "PubSubnetAZ2"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "NAT AZ2"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash -v\n",
+                "yum update -y aws*\n",
+                ". /etc/profile.d/aws-apitools-common.sh\n",
+                "# Associate EIP to ENI on instance launch\n",
+                "INSTANCE_ID=`curl http://169.254.169.254/latest/meta-data/instance-id`\n",
+                "EIPALLOC_ID=$(aws ec2 describe-addresses --region ",
+                {
+                    "Ref": "AWS::Region"
+                },
+                " --filters Name=instance-id,Values=${INSTANCE_ID} --output text | cut -f2)\n",
+                "aws ec2 associate-address --region ",
+                {
+                    "Ref": "AWS::Region"
+                },
+                " --instance-id $INSTANCE_ID --allocation-id $EIPALLOC_ID\n",
+                "# Configure iptables\n",
+                "/sbin/iptables -t nat -A POSTROUTING -o eth0 -s 0.0.0.0/0 -j MASQUERADE\n",
+                "/sbin/iptables-save > /etc/sysconfig/iptables\n",
+                "# Configure ip forwarding and redirects\n",
+                "echo 1 >  /proc/sys/net/ipv4/ip_forward && echo 0 >  /proc/sys/net/ipv4/conf/eth0/send_redirects\n",
+                "mkdir -p /etc/sysctl.d/\n",
+                "cat <<EOF > /etc/sysctl.d/nat.conf\n",
+                "net.ipv4.ip_forward = 1\n",
+                "net.ipv4.conf.eth0.send_redirects = 0\n",
+                "EOF\n",
+                "# Download nat_monitor.sh and configure\n",
+                "cd /root\n",
+                "wget http://media.amazonwebservices.com/articles/nat_monitor_files/nat_monitor.sh\n",
+                "# Update NAT_ID, NAT_RT_ID, and My_RT_ID\n",
+                "sed \"s/NAT_ID=/NAT_ID=",
+                {
+                  "Ref": "NatInstanceAZ1"
+                },
+                "/g\" /root/nat_monitor.sh > /root/nat_monitor.tmp\n",
+                "sed \"s/NAT_RT_ID=/NAT_RT_ID=",
+                {
+                  "Ref": "PrivateRouteTableAZ1"
+                },
+                "/g\" /root/nat_monitor.tmp > /root/nat_monitor.sh\n",
+                "sed \"s/My_RT_ID=/My_RT_ID=",
+                {
+                  "Ref": "PrivateRouteTableAZ2"
+                },
+                "/g\" /root/nat_monitor.sh > /root/nat_monitor.tmp\n",
+                "sed \"s/EC2_URL=/EC2_URL=https:\\/\\/ec2.",
+                {
+                  "Ref": "AWS::Region"
+                },
+                ".amazonaws.com",
+                "/g\" /root/nat_monitor.tmp > /root/nat_monitor.sh\n",
+                "sed \"s/Num_Pings=3/Num_Pings=",
+                {
+                  "Ref": "NumberOfPings"
+                },
+                "/g\" /root/nat_monitor.sh > /root/nat_monitor.tmp\n",
+                "sed \"s/Ping_Timeout=1/Ping_Timeout=",
+                {
+                  "Ref": "PingTimeout"
+                },
+                "/g\" /root/nat_monitor.tmp > /root/nat_monitor.sh\n",
+                "sed \"s/Wait_Between_Pings=2/Wait_Between_Pings=",
+                {
+                  "Ref": "WaitBetweenPings"
+                },
+                "/g\" /root/nat_monitor.sh > /root/nat_monitor.tmp\n",
+                "sed \"s/Wait_for_Instance_Stop=60/Wait_for_Instance_Stop=",
+                {
+                  "Ref": "WaitForInstanceStop"
+                },
+                "/g\" /root/nat_monitor.tmp > /root/nat_monitor.sh\n",
+                "sed \"s/Wait_for_Instance_Start=300/Wait_for_Instance_Start=",
+                {
+                  "Ref": "WaitForInstanceStart"
+                },
+                "/g\" /root/nat_monitor.sh > /root/nat_monitor.tmp\n",
+                "mv /root/nat_monitor.tmp /root/nat_monitor.sh\n",
+                "chmod a+x /root/nat_monitor.sh\n",
+                "echo '@reboot /root/nat_monitor.sh > /tmp/nat_monitor.log' | crontab\n",
+                "/root/nat_monitor.sh >> /tmp/nat_monitor.log &\n"
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "NatRole": {
+      "Type": "AWS::IAM::Role",
+       "Properties": {
+          "AssumeRolePolicyDocument": {
+             "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {
+                   "Service": [ "ec2.amazonaws.com" ]
+                },
+                "Action": [ "sts:AssumeRole" ]
+              }
+            ]
+          },
+          "Path": "/",
+          "Policies": [
+           {
+            "PolicyName": "NAT_Takeover",
+            "PolicyDocument": {
+              "Statement": [
+               {
+                 "Effect": "Allow",
+                 "Action": [
+                   "ec2:DescribeInstances",
+			             "ec2:DescribeRouteTables",
+                   "ec2:CreateRoute",
+                   "ec2:ReplaceRoute",
+                   "ec2:StartInstances",
+                   "ec2:StopInstances",
+			             "ec2:DescribeNetworkInterfaces",
+			             "ec2:DescribeAddresses",
+                   "ec2:AllocateAddress",
+                   "ec2:AssociateAddress",
+                   "ec2:DisassociateAddress"
+                 ],
+                 "Resource": "*"
+               }
+              ]
+            }
+           }
+          ]
+       }
+    },
+    "NatRoleProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+       "Properties": {
+          "Path": "/",
+          "Roles": [
+            {
+             "Ref": "NatRole"
+            }
+          ]
+       }
+    },
+    "NatSecurityGroup": {
+      "DependsOn": [ "VPC" ],
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Security group for allowing access in/out of VPC",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "VPC NAT Instance Security Group"
+          },
+          {
+            "Key": "Environment",
+            "Value": { "Ref": "Environment" }
+          }
+        ]
+      }
+    },
+    "NatSGEgressS3endpoint": {
+      "DependsOn": [ "NatSecurityGroup", "S3EndpointStack" ],
+      "Condition": "ConfigureS3Endpoint",
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "DestinationPrefixListId": { "Fn::FindInMap": [ "PrefixListId", { "Ref": "AWS::Region" }, "s3"]}
+      }
+    },
+    "NatSGEgressGlobalHttp": {
+      "DependsOn": ["NatSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "80",
+        "ToPort": "80",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "NatSGEgressGlobalHttps": {
+      "DependsOn": ["NatSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "NatSGEgressGlobalIcmp": {
+      "DependsOn": ["NatSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+        "IpProtocol": "icmp",
+        "FromPort": "-1",
+        "ToPort": "-1",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "NatSGEgressGlobalTcpRemote": {
+      "DependsOn": ["NatSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "0",
+        "ToPort": "65535",
+        "CidrIp": { "Ref": "RemoteCIDR" }
+      }
+    },
+    "NatSGIngressIcmp": {
+      "DependsOn": ["NatSecurityGroup"],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+        "IpProtocol": "icmp",
+        "FromPort": "-1",
+        "ToPort": "-1",
+        "SourceSecurityGroupId": { "Ref": "NatSecurityGroup" }
+      }
+    },
+    "NatSGEgressSsh": {
+      "DependsOn": ["NatSecurityGroup"],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+      	"IpProtocol": "tcp",
+      	"FromPort": "22",
+      	"ToPort": "22",
+        "CidrIp": { "Ref": "VpcCIDR" }
+      }
+    },
+    "NatSGIngressSsh": {
+      "DependsOn": ["NatSecurityGroup"],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+      	"IpProtocol": "tcp",
+      	"FromPort": "22",
+      	"ToPort": "22",
+        "CidrIp": { "Ref": "VpcCIDR" }
+      }
+    },
+    "NatSGIngressSshRemote": {
+      "DependsOn": ["NatSecurityGroup"],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+      	"IpProtocol": "tcp",
+      	"FromPort": "22",
+      	"ToPort": "22",
+        "CidrIp": { "Ref": "RemoteCIDR" }
+      }
+    },
+    "NatSGIngressHttp": {
+      "DependsOn": ["NatSecurityGroup"],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+      	"IpProtocol": "tcp",
+      	"FromPort": "80",
+      	"ToPort": "80",
+        "CidrIp": { "Ref": "VpcCIDR" }
+      }
+    },
+    "NatSGIngressHttps": {
+      "DependsOn": ["NatSecurityGroup"],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "NatSecurityGroup" },
+      	"IpProtocol": "tcp",
+      	"FromPort": "443",
+      	"ToPort": "443",
+        "CidrIp": { "Ref": "VpcCIDR" }
+      }
+    },
+    "RdsPrivateSubnetGroup": {
+      "DependsOn": [ "PrivSubnetAZ1", "PrivSubnetAZ2" ],
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "Allows RDS communication between private subnets",
+        "SubnetIds": [
+          {
+            "Ref": "PrivSubnetAZ1"
+          },
+          {
+            "Ref": "PrivSubnetAZ2"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Join": [
+                "",
+                [
+                  "dbsubnetgroup_",
+                  {
+                    "Ref": "Environment"
+                  },
+                  "_private"
+                ]
+              ]
+            }
+          },
+          {
+            "Key": "Network",
+            "Value": "private"
+          },
+          {
+            "Key": "Environment",
+            "Value": {
+              "Ref": "Environment"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "VPC": {
+      "Description": "VPC ID of the new VPC",
+      "Value": {
+        "Ref": "VPC"
+      }
+    },
+    "InetGw": {
+      "Description": "IGW ID for VPC",
+      "Value": {
+        "Ref": "InetGw"
+      }
+    },
+    "PrivateSubnetAZ1": {
+      "Description": "Private subnet ID in AZ1",
+      "Value": {
+        "Ref": "PrivSubnetAZ1"
+      }
+    },
+    "PrivateSubnetAZ2": {
+      "Description": "Private subnet ID in AZ2",
+      "Value": {
+        "Ref": "PrivSubnetAZ2"
+      }
+    },
+    "PublicSubnetAZ1": {
+      "Description": "Public subnet ID in AZ1",
+      "Value": {
+        "Ref": "PubSubnetAZ1"
+      }
+    },
+    "PublicSubnetAZ2": {
+      "Description": "Public subnet ID in AZ2",
+      "Value": {
+        "Ref": "PubSubnetAZ2"
+      }
+    },
+    "RdsPrivateSubnetGroup": {
+      "Description": "Private access to DB subnets",
+      "Value": "RdsPrivateSubnetGroup"
+    },
+    "NatInstanceAZ1": {
+      "Description": "NAT instance in AZ1",
+      "Value": {
+        "Ref": "NatInstanceAZ1"
+      }
+    },
+    "NatEipAZ1": {
+      "Description": "EIP of NAT instance in AZ1",
+      "Value": {
+        "Ref": "NatEipAZ1"
+      }
+    },
+    "NatInstanceAZ2": {
+      "Description": "NAT instance in AZ2",
+      "Value": {
+        "Ref": "NatInstanceAZ2"
+      }
+    },
+    "NatEipAZ2": {
+      "Description": "EIP of NAT instance in AZ2",
+      "Value": {
+        "Ref": "NatEipAZ2"
+      }
+    }
+  }
+}

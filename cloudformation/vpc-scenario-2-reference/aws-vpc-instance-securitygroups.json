@@ -1,0 +1,300 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Create security groups for instances in public/private VPC",
+  "Parameters": {
+    "Environment": {
+      "Type": "String",
+      "Description": "Used for miscellaneous object names and tags"
+    },
+    "RemoteCIDR": {
+      "Type": "String",
+      "Description": "CIDR IP range allowed to remotely connect to the VPC, ideally your VPN/ISP netblock",
+      "ConstraintDescription": "Valid IP CIDR block range - x.x.x.x/x."
+    },
+    "VPC": {
+      "Type": "String",
+      "Description": "Object ID of VPC"
+    },
+    "VpcCIDR": {
+      "Type": "String",
+      "Description": "IP Address range for the VPC"
+    }
+  },
+  "Mappings": {
+    "PrefixListId": {
+    	"us-east-1": {
+        "s3": "pl-63a5400a"
+      },
+    	"us-east-2": {
+        "s3": "pl-7ba54012"
+      },
+    	"us-west-1": {
+        "s3": "pl-6ba54002"
+      },
+    	"us-west-2": {
+        "s3": "pl-68a54001"
+      },
+      "eu-west-1": {
+        "s3":  "pl-6da54004"
+      },
+      "eu-central-1": {
+        "s3":  "pl-6ea54007"
+      },
+      "ap-northeast-1": {
+        "s3":  "pl-61a54008"
+      },
+      "ap-northeast-2": {
+        "s3":  "pl-78a54011"
+      },
+      "ap-southeast-1": {
+        "s3":  "pl-6fa54006"
+      },
+      "ap-southeast-2": {
+        "s3":  "pl-6ca54005"
+      },
+      "ap-south-1": {
+        "s3":  "pl-78a54011"
+      },
+      "sa-east-1": {
+        "s3":  "pl-6aa54003"
+      }
+    }
+  },
+  "Resources": {
+    "PrivInstSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Security group for allowing access in/out of private instances in VPC",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Private Instance Security Group"
+          },
+          {
+            "Key": "Environment",
+            "Value": { "Ref": "Environment" }
+          }
+        ]
+      }
+    },
+    "PrivInstSGEgressS3endpoint": {
+      "DependsOn": [ "PrivInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "PrivInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "DestinationPrefixListId": { "Fn::FindInMap": [ "PrefixListId", { "Ref": "AWS::Region" }, "s3"]}
+      }
+    },
+    "PrivInstSGEgressGlobalHttp": {
+      "DependsOn": [ "PrivInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "PrivInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "80",
+        "ToPort": "80",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PrivInstSGEgressGlobalHttps": {
+      "DependsOn": [ "PrivInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "PrivInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PrivInstSGEgressSsh": {
+      "DependsOn": [ "PrivInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "PrivInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+        "SourceSecurityGroupId": { "Ref": "PrivInstSecurityGroup" }
+      }
+    },
+    "PrivInstSGIngressSsh": {
+      "DependsOn": [ "PrivInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "PrivInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+        "CidrIp": { "Ref": "VpcCIDR" }
+      }
+    },
+    "PrivInstSGIngressMysql": {
+      "DependsOn": [ "PrivInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "PrivInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "3306",
+        "ToPort": "3306",
+        "SourceSecurityGroupId": { "Ref": "PubInstSecurityGroup" }
+      }
+    },
+    "PrivInstSGIngressHttp": {
+      "DependsOn": [ "PrivInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "PrivInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "80",
+        "ToPort": "80",
+        "SourceSecurityGroupId": { "Ref": "PrivInstSecurityGroup" }
+      }
+    },
+    "PrivInstSGIngressHttps": {
+      "DependsOn": [ "PrivInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "PrivInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "SourceSecurityGroupId": { "Ref": "PrivInstSecurityGroup" }
+      }
+    },
+    "PubInstSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Security group for allowing access in/out of public instances in VPC",
+        "VpcId": {
+          "Ref": "VPC"
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "Public Instance Security Group"
+          },
+          {
+            "Key": "Environment",
+            "Value": { "Ref": "Environment" }
+          }
+        ]
+      }
+    },
+    "PubInstSGEgressS3endpoint": {
+      "DependsOn": [ "PubInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "PubInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "DestinationPrefixListId": { "Fn::FindInMap": [ "PrefixListId", { "Ref": "AWS::Region" }, "s3"]}
+      }
+    },
+    "PubInstSGEgressGlobalHttp": {
+      "DependsOn": [ "PubInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "PubInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "80",
+        "ToPort": "80",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PubInstSGEgressGlobalHttps": {
+      "DependsOn": [ "PubInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "PubInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PubInstSGEgressMysql": {
+      "DependsOn": [ "PubInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "PubInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "3306",
+        "ToPort": "3306",
+        "SourceSecurityGroupId": { "Ref": "PrivInstSecurityGroup" }
+      }
+    },
+    "PubInstSGEgressSsh": {
+      "DependsOn": [ "PubInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "Properties": {
+        "GroupId": { "Ref": "PubInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+        "SourceSecurityGroupId": { "Ref": "PrivInstSecurityGroup" }
+      }
+    },
+    "PubInstSGIngressSsh": {
+      "DependsOn": [ "PubInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "PubInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+        "CidrIp": { "Ref": "RemoteCIDR" }
+      }
+    },
+    "PubInstSGIngressMysql": {
+      "DependsOn": [ "PrivInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "PrivInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "3306",
+        "ToPort": "3306",
+        "SourceSecurityGroupId": { "Ref": "PubInstSecurityGroup" }
+      }
+    },
+    "PubInstSGIngressHttp": {
+      "DependsOn": [ "PubInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "PubInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "80",
+        "ToPort": "80",
+        "CidrIp": "0.0.0.0/0"
+      }
+    },
+    "PubInstSGIngressHttps": {
+      "DependsOn": [ "PubInstSecurityGroup" ],
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "Properties": {
+        "GroupId": { "Ref": "PubInstSecurityGroup" },
+        "IpProtocol": "tcp",
+        "FromPort": "443",
+        "ToPort": "443",
+        "CidrIp": "0.0.0.0/0"
+      }
+    }
+  },
+  "Outputs": {
+    "PrivInstSecurityGroup": {
+      "Description": "Security group for instances in private subnets",
+      "Value": { "Ref": "PrivInstSecurityGroup" }
+    },
+    "PubInstSecurityGroup": {
+      "Description": "Security group for instances in public subnets",
+      "Value": { "Ref": "PubInstSecurityGroup" }
+    }
+  }
+}
