@@ -5,7 +5,7 @@ Create a VPC with public/private subnets in two AZs using NAT gateways in each p
 
 #### Metadata
 
- * **AWS::CloudFormation::Interface**: {u'ParameterGroups': [{u'Parameters': [u'Environment', u'RemoteCIDR', u'ConfigS3Endpoint', u'S3Bucket', u'TemplatePath', u'VpcCIDR', u'AvZone1', u'AvZone2', u'PublicSubnetAZ1', u'PublicSubnetAZ2', u'PrivateSubnetAZ1', u'PrivateSubnetAZ2'], u'Label': {u'default': u'VPC Configuration'}}], u'ParameterLabels': {u'Environment': {u'default': u'Which environment will use this VPC? (used in various tags and resource names)'}, u'VpcCIDR': {u'default': u'What is the CIDR block for this VPC?'}}}
+ * **AWS::CloudFormation::Interface**: {ParameterGroups': [{Parameters': [Environment', RemoteCIDR', ConfigS3Endpoint', S3Bucket', TemplatePath', VpcCIDR', AvZone1', AvZone2', PublicSubnetAZ1', PublicSubnetAZ2', PrivateSubnetAZ1', PrivateSubnetAZ2'], Label': {default': VPC Configuration'}}], ParameterLabels': {Environment': {default': Which environment will use this VPC? (used in various tags and resource names)'}, VpcCIDR': {default': What is the CIDR block for this VPC?'}}}
 
 ## Parameters
 
@@ -43,23 +43,23 @@ Create a VPC with public/private subnets in two AZs using NAT gateways in each p
 
 ## Conditions
 
- * **ConfigureS3Endpoint** - `{u'Fn::Equals': [{u'Ref': u'ConfigS3Endpoint'}, u'yes']}`
+ * **ConfigureS3Endpoint** - `{Fn::Equals': [{Ref': ConfigS3Endpoint'}, yes']}`
 
 ## Mappings
 
  * **PrefixListId**:
-  * `(u'ap-south-1', {u's3': u'pl-78a54011'})`
-  * `(u'us-east-1', {u's3': u'pl-63a5400a'})`
-  * `(u'us-east-2', {u's3': u'pl-7ba54012'})`
-  * `(u'ap-southeast-2', {u's3': u'pl-6ca54005'})`
-  * `(u'ap-northeast-1', {u's3': u'pl-61a54008'})`
-  * `(u'sa-east-1', {u's3': u'pl-6aa54003'})`
-  * `(u'ap-southeast-1', {u's3': u'pl-6fa54006'})`
-  * `(u'ap-northeast-2', {u's3': u'pl-78a54011'})`
-  * `(u'us-west-2', {u's3': u'pl-68a54001'})`
-  * `(u'us-west-1', {u's3': u'pl-6ba54002'})`
-  * `(u'eu-central-1', {u's3': u'pl-6ea54007'})`
-  * `(u'eu-west-1', {u's3': u'pl-6da54004'})`
+  * `(ap-south-1', {s3': pl-78a54011'})`
+  * `(us-east-1', {s3': pl-63a5400a'})`
+  * `(us-east-2', {s3': pl-7ba54012'})`
+  * `(ap-southeast-2', {s3': pl-6ca54005'})`
+  * `(ap-northeast-1', {s3': pl-61a54008'})`
+  * `(sa-east-1', {s3': pl-6aa54003'})`
+  * `(ap-southeast-1', {s3': pl-6fa54006'})`
+  * `(ap-northeast-2', {s3': pl-78a54011'})`
+  * `(us-west-2', {s3': pl-68a54001'})`
+  * `(us-west-1', {s3': pl-6ba54002'})`
+  * `(eu-central-1', {s3': pl-6ea54007'})`
+  * `(eu-west-1', {s3': pl-6da54004'})`
 
 ## Resources
 
