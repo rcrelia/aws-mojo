@@ -17,8 +17,3 @@ CloudFormation template for creating a CodeCommit repository along with a SNS to
  * **RepoSNSTopic** - `AWS::SNS::Topic`
  * **Repository** - `AWS::CodeCommit::Repository`
 
-## Outputs
-
- * **CloneUrlSsh** - `{u'Fn::GetAtt': [u'Repository', u'CloneUrlSsh']}`
- * **CodeCommitURL** - `{u'Fn::Join': [u'', [u'https://console.aws.amazon.com/codecommit/home?region=', {u'Ref': u'AWS::Region'}, u'#/repository/', {u'Ref': u'RepoName'}, u'/browse/HEAD/--/']]}`
- * **SNSTopic** - `{u'Ref': u'RepoSNSTopic'}`
