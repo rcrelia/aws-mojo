@@ -92,7 +92,7 @@
     "KeyPair": {
       "Type": "AWS::EC2::KeyPair::KeyName",
       "Description": "Existing EC2 key pair for instances",
-      "Default": "infrastructure01"
+      "Default": "mykeypair"
     },
     "ListenerProtocol": {
       "Type": "String",
@@ -117,12 +117,12 @@
     "S3Bucket": {
       "Type": "String",
       "Description": "S3Bucket containing sample app code",
-      "Default": "rc-awsdev"
+      "Default": "mybucketname"
     },
     "SSHSourceRestriction": {
       "Type": "String",
       "Description": "SSH access to EC2 instances",
-      "Default": "tcp, 22, 22, 76.123.122.72/32"
+      "Default": "tcp, 22, 22, 76.1.2.3/32"
     },
     "StackSource": {
       "Type": "String",
