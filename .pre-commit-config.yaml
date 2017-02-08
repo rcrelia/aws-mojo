@@ -4,9 +4,9 @@
     -   id: trailing-whitespace
         files: \.(js|rb|md|py|sh|txt|yaml|yml)$
     -   id: check-json
-        files: \.(json|template)
+        files: \.(json|template)$
     -   id: check-yaml
-        files: \.(yml|yaml)
+        files: \.(yml|yaml)$
     -   id: detect-private-key
     -   id: detect-aws-credentials
 -   repo: git://github.com/detailyang/pre-commit-shell
