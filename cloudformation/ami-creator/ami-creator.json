@@ -227,7 +227,7 @@
   },
   "Outputs": {
     "Ec2Instance": {
-       "Description": "Instance ID of GitLab Runner Master",
+       "Description": "Instance ID of AMI Master",
        "Value": { "Ref": "Ec2Instance" }
      },
     "AMI": {
