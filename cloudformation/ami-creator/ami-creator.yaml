@@ -1,0 +1,260 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates EC2 instance then an AMI from the instance
+Parameters:
+  InstanceName:
+    Description: Name of instance and AMI to generate
+    Type: String
+    MinLength: '0'
+    MaxLength: '256'
+    Default: my-ami-instance
+  InstanceType:
+    Description: Instance type to launch EC2 instances.
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+    - t2.micro
+    - t2.medium
+Mappings:
+  RegionMap:
+    us-east-1:
+      BaseAMI: ami-0b33d91d
+    us-east-2:
+      BaseAMI: ami-c55673a0
+    us-west-1:
+      BaseAMI: ami-165a0876
+    us-west-2:
+      BaseAMI: ami-f173cc91
+Resources:
+  AMICreate:
+    Type: AWS::CloudFormation::WaitCondition
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+  Ec2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      BlockDeviceMappings:
+      - DeviceName: /dev/xvda
+        Ebs:
+          DeleteOnTermination: 'true'
+          VolumeType: gp2
+          VolumeSize: '8'
+      ImageId: !FindInMap [RegionMap, !Ref 'AWS::Region', BaseAMI]
+      InstanceType: !Ref 'InstanceType'
+      Tags:
+      - Key: Name
+        Value: !Ref 'InstanceName'
+      UserData: !Base64
+        Fn::Join:
+        - ''
+        - - '#!/bin/bash
+
+            '
+          - '#
+
+            '
+          - 'yum update -y
+
+            '
+          - '/opt/aws/bin/cfn-signal -e $? --region '
+          - !Ref 'AWS::Region'
+          - ' --stack '
+          - !Ref 'AWS::StackName'
+          - ' --resource AMICreate
+
+            '
+          - 'shutdown -h now
+
+            '
+  AMI:
+    Type: Custom::AMI
+    DependsOn: AMICreate
+    Properties:
+      ServiceToken: !GetAtt 'AMIFunction.Arn'
+      InstanceId: !Ref 'Ec2Instance'
+  AMIFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt 'LambdaExecutionRole.Arn'
+      Code:
+        ZipFile: !Join ['', ['var response = require(''cfn-response'');
+
+              ', 'var AWS = require(''aws-sdk'');
+
+              ', 'exports.handler = function(event, context) {
+
+              ', '  console.log("Request received:\n", JSON.stringify(event));
+
+              ', '  var physicalId = event.PhysicalResourceId;
+
+              ', '  function success(data) {
+
+              ', '    return response.send(event, context, response.SUCCESS, data,
+              physicalId);
+
+              ', '  }
+
+              ', '  function failed(e) {
+
+              ', '    return response.send(event, context, response.FAILED, e, physicalId);
+
+              ', '  }
+
+              ', '  // Call ec2.waitFor, continuing if not finished before Lambda
+              function timeout.
+
+              ', '  function wait(waiter) {
+
+              ', '    console.log("Waiting: ", JSON.stringify(waiter));
+
+              ', '    event.waiter = waiter;
+
+              ', '    event.PhysicalResourceId = physicalId;
+
+              ', '    var request = ec2.waitFor(waiter.state, waiter.params);
+
+              ', '    setTimeout(()=>{
+
+              ', '      request.abort();
+
+              ', '      console.log("Timeout reached, continuing function. Params:\n",
+              JSON.stringify(event));
+
+              ', '      var lambda = new AWS.Lambda();
+
+              ', '      lambda.invoke({
+
+              ', '        FunctionName: context.invokedFunctionArn,
+
+              ', '        InvocationType: ''Event'',
+
+              ', '        Payload: JSON.stringify(event)
+
+              ', '      }).promise().then((data)=>context.done()).catch((err)=>context.fail(err));
+
+              ', '    }, context.getRemainingTimeInMillis() - 5000);
+
+              ', '    return request.promise().catch((err)=>
+
+              ', '      (err.code == ''RequestAbortedError'') ?
+
+              ', '        new Promise(()=>context.done()) :
+
+              ', '        Promise.reject(err)
+
+              ', '    );
+
+              ', '  }
+
+              ', '  var ec2 = new AWS.EC2(),
+
+              ', '      instanceId = event.ResourceProperties.InstanceId;
+
+              ', '  if (event.waiter) {
+
+              ', '    wait(event.waiter).then((data)=>success({})).catch((err)=>failed(err));
+
+              ', '  } else if (event.RequestType == ''Create'' || event.RequestType
+              == ''Update'') {
+
+              ', '    if (!instanceId) { failed(''InstanceID required''); }
+
+              ', '    ec2.waitFor(''instanceStopped'', {InstanceIds: [instanceId]}).promise()
+
+              ', '    .then((data)=>
+
+              ', '      ec2.createImage({
+
+              ', '        InstanceId: instanceId,
+
+              ', '        Name: ''', !Ref 'InstanceName', '''
+
+              ', '      }).promise()
+
+              ', '    ).then((data)=>
+
+              ', '      wait({
+
+              ', '        state: ''imageAvailable'',
+
+              ', '        params: {ImageIds: [physicalId = data.ImageId]}
+
+              ', '      })
+
+              ', '    ).then((data)=>success({})).catch((err)=>failed(err));
+
+              ', '  } else if (event.RequestType == ''Delete'') {
+
+              ', '    if (physicalId.indexOf(''ami-'') !== 0) { return success({});}
+
+              ', '    ec2.describeImages({ImageIds: [physicalId]}).promise()
+
+              ', '    .then((data)=>
+
+              ', '      (data.Images.length === 0) ? success({}) :
+
+              ', '      ec2.deregisterImage({ImageId: physicalId}).promise()
+
+              ', '    ).then((data)=>
+
+              ', '      ec2.describeSnapshots({Filters: [{
+
+              ', '        Name: ''description'',
+
+              ', '        Values: ["*" + physicalId + "*"]
+
+              ', '      }]}).promise()
+
+              ', '    ).then((data)=>
+
+              ', '      (data.Snapshots.length === 0) ? success({}) :
+
+              ', '      ec2.deleteSnapshot({SnapshotId: data.Snapshots[0].SnapshotId}).promise()
+
+              ', '    ).then((data)=>success({})).catch((err)=>failed(err));
+
+              ', '  }
+
+              ', '};
+
+              ']]
+      Runtime: nodejs4.3
+      Timeout: 300
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
+      Policies:
+      - PolicyName: EC2Policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - ec2:DescribeInstances
+            - ec2:DescribeImages
+            - ec2:CreateImage
+            - ec2:DeregisterImage
+            - ec2:DescribeSnapshots
+            - ec2:DeleteSnapshot
+            Resource:
+            - '*'
+Outputs:
+  Ec2Instance:
+    Description: Instance ID of GitLab Runner Master
+    Value: !Ref 'Ec2Instance'
+  AMI:
+    Value: !Ref 'AMI'
