@@ -1,0 +1,58 @@
+---
+version: 1
+disable_existing_loggers: False
+formatters:
+  simple:
+    format: "%(asctime)s %(levelname)s %(module)s %(message)s"
+  fancy:
+    format: "%(asctime)s|%(levelname)s|%(module)s.%(funcName)s:%(lineno)-2s|%(message)s"
+  debug:
+    format: "%(asctime)s|%(levelname)s|%(pathname)s:%(funcName)s:%(lineno)-2s|%(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: simple
+    stream: ext://sys.stdout
+
+  screen:
+    class: logging.StreamHandler
+    level: ERROR 
+    formatter: fancy
+    stream: ext://sys.stdout
+
+  logfile:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: debug
+    filename: "/tmp/deployVpc.log"
+    maxBytes: 1000000
+    backupCount: 10
+    encoding: utf8
+
+loggers:
+  boto:
+    level: WARNING
+    handlers: [logfile, screen]
+    propagate: no
+  boto3:
+    level: WARNING
+    handlers: [logfile, screen]
+    propagate: no
+  botocore:
+    level: WARNING
+    handlers: [logfile, screen]
+    propagate: no
+  deployVpc:
+    level: INFO
+    handlers: [logfile, screen]
+    propagate: no
+  __main__:
+    level: INFO
+    handlers: [logfile, screen]
+    propagate: no
+
+root:
+  level: NOTSET
+  handlers: [console, logfile]
