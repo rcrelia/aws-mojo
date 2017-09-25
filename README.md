@@ -9,6 +9,9 @@ Bits of AWS code that may be of use to others...
   - Deploy a sample PHP application to a multi-AZ environment using ElasticBeanstalk
   - Includes enhanced health monitoring
   - Install the phpsample.zip bundle into your S3 bucket using the specified path
+* loggerExample
+  - Illustration of using Python's logging() facility in the context of boto3/botocore libraries
+  - Includes sample boto3 code as a demonstration 
 * vpc-scenario-2-reference
   - Quick CF stack to deploy a more secure "Scenario 2" VPC
   - More info: https://randops.org/2016/11/29/quick-vpc-reference-configuration-for-scenario-2/
