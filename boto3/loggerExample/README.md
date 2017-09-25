@@ -203,7 +203,7 @@ Example: Default configuration - output to logfile handler (should be messages a
 
 Example: Debug configuration - output to screen handler (should be messages at INFO and above for your code and at WARNING)
 
-![Debug screen handler output](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/images/ebug.screen.png)
+![Debug screen handler output](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/images/debug.screen.png)
 
 Example: Debug configuration - output to logfile handler (should be messages at DEBUG and all levels for your code and boto library code messaging)
 
