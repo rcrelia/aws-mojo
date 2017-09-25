@@ -195,19 +195,19 @@ That's all there is to it. Below are some screen shots that show the handler out
 
 Example: Default configuration - output to screen handler (should be no output except ERROR and above)
 
-![Default screen handler output]("https://github.com/rcrelia/aws-mojo/boto3/loggerExample/default.screen.png")
+![Default screen handler output](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/images/default.screen.png)
 
 Example: Default configuration - output to logfile handler (should be messages at INFO and above for your code and at WARNING and above for boto library code messaging)
 
-![Default logfile handler output]("https://github.com/rcrelia/aws-mojo/boto3/loggerExample/default.logfile.png")
+![Default logfile handler output](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/images/default.logfile.png)
 
 Example: Debug configuration - output to screen handler (should be messages at INFO and above for your code and at WARNING)
 
-![Debug screen handler output]("https://github.com/rcrelia/aws-mojo/boto3/loggerExample/debug.screen.png")
+![Debug screen handler output](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/images/ebug.screen.png)
 
 Example: Debug configuration - output to logfile handler (should be messages at DEBUG and all levels for your code and boto library code messaging)
 
-![Debug logfile handler output]("https://github.com/rcrelia/aws-mojo/boto3/loggerExample/debug.logfile.png")
+![Debug logfile handler output](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/images/debug.logfile.png)
 
 ## References
 
