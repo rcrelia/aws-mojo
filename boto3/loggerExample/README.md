@@ -195,7 +195,7 @@ That's all there is to it. Below are some screen shots that show the handler out
 
 Example: Default configuration - output to screen handler (should be no output except ERROR and above)
 
-[![Default screen handler output](default.screen.png)](https://github.com/rcrelia/aws-mojo/boto3/loggerExample/default.screen.png)
+[![Default screen handler output](default.screen.png)](https://github.com/rcrelia/aws-mojo/boto3/loggerExample/default.screen.png?raw=true)
 
 Example: Default configuration - output to logfile handler (should be messages at INFO and above for your code and at WARNING and above for boto library code messaging)
 
