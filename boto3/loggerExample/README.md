@@ -16,7 +16,7 @@ The setup for logging() that I am using involves two configuration files, logger
 
 > *Note: boto (including botocore) ships with some logging() active at the INFO level. While not as detailed as DEBUG, there's enough busyness to that level of logging by boto that you will likely want to not see its messages except when troubleshooting or debugging your code. This is the approach I took with the current configuration, by opting to set custom logger definitions for boto and friends, so that the root logger will not by default display boto's native log level messages.*
 
-Let's take a look at the default logging configuration file I've put together, [logger_config.yaml](https://github.com/rcrelia/aws-mojo/boto3/loggerExample/logger_config.yaml):
+Let's take a look at the default logging configuration file I've put together, [logger_config.yaml](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/logger_config.yaml):
 
 ```yaml
 ---
@@ -118,7 +118,7 @@ I also don't want customer loggers to propagate messages throughout the logging 
 
 ### Setup
 
-I created a module called [loggerSetup.py](https://github.com/rcrelia/aws-mojo/boto3/loggerExample/loggerSetup.py) which is where I do the initialization for defining how logging() will be configured, via the configuration files:
+I created a module called [loggerSetup.py](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/loggerSetup.py) which is where I do the initialization for defining how logging() will be configured, via the configuration files:
 
 ```Python
 #!/usr/bin/env python
