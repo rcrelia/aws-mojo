@@ -12,7 +12,7 @@ For detailed information on logging beyond what I present here, consult the [exc
 
 ## Logging Configuration
 
-The setup for logging() that I am using involves two configuration files, logger_config.yaml and logger_config_debug.yaml. The difference between the two files has to do with the log levels used by the log handlers. By default, the example module deployVpc.py uses the logger_config setup. This config will produce no screen output by default except at the ERROR level and above. It produces a logfile, however, that contains messages at the INFO level for the module and at the WARNING level for boto-specific calls.
+The setup for logging() that I am using involves two configuration files, [logger_config.yaml](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/logger_config.yaml) and [logger_config_debug.yaml](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/logger_config_debug.yaml). The difference between the two files has to do with the log levels used by the log handlers. By default, the example module [deployVpc.py](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/deployVpc.py) uses the logger_config setup. This config will produce no screen output by default except at the ERROR level and above. It produces a logfile, however, that contains messages at the INFO level for the module and at the WARNING level for boto-specific calls.
 
 > *Note: boto (including botocore) ships with some logging() active at the INFO level. While not as detailed as DEBUG, there's enough busyness to that level of logging by boto that you will likely want to not see its messages except when troubleshooting or debugging your code. This is the approach I took with the current configuration, by opting to set custom logger definitions for boto and friends, so that the root logger will not by default display boto's native log level messages.*
 
@@ -171,7 +171,9 @@ You would simply edit the first line to use .configure_debug() instead of .confi
 
 ### Usage
 
-Usage is straightforward, simply do the following in each module you wish to use logging():
+Usage is straightforward, simply do the following in each module you wish to use logging(). Refer to the [deployVpc.py](https://github.com/rcrelia/aws-mojo/blob/master/boto3/loggerExample/deployVpc.py) script for the full syntax and usage around these bits of code.
+
+> *Note: deployVpc.py requires use of AWS API key access that is stored in a config profile (I used one called 'aws-mojo', change to your own favorite profile). It **will** create a VPC and Internet Gateway in your AWS account. But it will also, by default, remove those objects as well. Caveat emptor...*
 
 1. Import the logging modules and loggerSetup module
   ```Python
